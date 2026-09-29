@@ -19,7 +19,12 @@ Assets/
 │   │   ├── ApiModels.cs      요청·응답 모양
 │   │   └── ClientInfo.cs     클라이언트 종류/버전, 서버 주소, 익명 플레이어 id
 │   └── Presentation/   화면. 1단계는 씬·프리팹 없이 코드가 UGUI 를 만든다 (GameBootstrap)
-├── Editor/StreamsBuild.cs    메뉴 STREAMS → Build WebGL
+│       ├── GameController.cs 1920×1080 탑뷰 테이블: 왼쪽 점수·캐릭터, 가운데 AI/내 보드(1×20), 오른쪽 판 정보
+│       ├── Tutorial.cs       서버 없는 튜토리얼 (고정 덱·온보딩·코칭, 웹 원작 game.html 을 옮김)
+│       └── Sound.cs          배경음악(Resources/Audio/bgm, 있으면) + 코드로 합성한 8비트 효과음
+├── Resources/Art/            도트 아트 (PixelLab 생성), 폰트 StreamsPixel(영문·숫자) · Galmuri11(한글, OFL, 서브셋)
+├── Editor/StreamsBuild.cs    메뉴 STREAMS → Build WebGL (크기 우선 + LTO)
+├── Editor/PixelArtImporter.cs Resources/Art 를 점 필터·무압축으로 들여옴
 └── Tests/EditMode/           규칙 테스트 (Data/rules.json = 서버 정답지)
 Tools/CoreCheck/              Unity 없이 규칙 검사 (.NET 8, CI)
 ```

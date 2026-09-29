@@ -26,6 +26,9 @@ public static class StreamsBuild
         PlayerSettings.WebGL.dataCaching = true;
         PlayerSettings.SetManagedStrippingLevel(NamedBuildTarget.WebGL, ManagedStrippingLevel.Medium);
         PlayerSettings.stripEngineCode = true;
+        // 기본값(빌드 시간 우선)은 wasm 이 사이트 파일 한도(25 MiB)를 넘는다 → 크기 우선 + LTO
+        UnityEditor.WebGL.UserBuildSettings.codeOptimization = UnityEditor.WebGL.WasmCodeOptimization.DiskSizeLTO;
+        PlayerSettings.SetIl2CppCodeGeneration(NamedBuildTarget.WebGL, Il2CppCodeGeneration.OptimizeSize);
         PlayerSettings.runInBackground = true;
         if (string.IsNullOrEmpty(PlayerSettings.bundleVersion) || PlayerSettings.bundleVersion == "1.0")
             PlayerSettings.bundleVersion = "0.1.0"; // x-streams-client 헤더 버전

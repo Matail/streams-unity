@@ -1,0 +1,31 @@
+# Unity 가 만드는 것
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+*.csproj
+*.sln
+*.suo
+*.user
+*.pidb
+*.booproj
+*.unityproj
+.vs/
+.idea/
+.vscode/
+*.apk
+*.aab
+crashlytics-build.properties
+sysinfo.txt
+
+# 예외: Unity 밖에서 쓰는 .NET 검사 프로젝트
+!/Tools/**/*.csproj
+/Tools/**/bin/
+/Tools/**/obj/
+
+.DS_Store

@@ -1,0 +1,4 @@
+<!-- 코드 스트리핑이 JsonUtility 로만 쓰는 API 모델 필드를 지우지 않게 -->
+<linker>
+  <assembly fullname="Streams.Net" preserve="all" />
+</linker>

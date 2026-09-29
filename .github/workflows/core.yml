@@ -1,0 +1,19 @@
+# Unity 라이선스 없이 도는 검사: C# 규칙(Streams.Core)이 서버 정답지와 같은지.
+name: core
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet run -c Release --project Tools/CoreCheck
+        env:
+          DOTNET_CLI_TELEMETRY_OPTOUT: 1
+          DOTNET_NOLOGO: 1

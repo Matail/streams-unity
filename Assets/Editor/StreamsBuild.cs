@@ -24,6 +24,8 @@ public static class StreamsBuild
         // 파일명에 해시 → 사이트에서 오래 캐시해도 새 빌드가 바로 반영됨
         PlayerSettings.WebGL.nameFilesAsHashes = true;
         PlayerSettings.WebGL.dataCaching = true;
+        // 페이지 바탕을 my-site 와 같게 (Assets/WebGLTemplates/STREAMS)
+        PlayerSettings.WebGL.template = "PROJECT:STREAMS";
         PlayerSettings.SetManagedStrippingLevel(NamedBuildTarget.WebGL, ManagedStrippingLevel.Medium);
         PlayerSettings.stripEngineCode = true;
         // 기본값(빌드 시간 우선)은 wasm 이 사이트 파일 한도(25 MiB)를 넘는다 → 크기 우선 + LTO

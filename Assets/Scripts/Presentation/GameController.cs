@@ -362,6 +362,35 @@ namespace Streams.Presentation
                 startPanel.SetActive(true);
             }), Ui.Red);
             Ui.Size(levels, 0, 64);
+
+            // 소리: 켜고 끄기 + 전체 볼륨 (배경음악·효과음 모두)
+            var sound = Ui.Picture("Sound", col, "panel", new Color(0.3f, 0.34f, 0.42f));
+            Ui.Size(sound, 0, 72);
+            // 난이도 창·튜토리얼 말풍선이 화면을 덮어도 소리는 언제든 만질 수 있게 그 위에 그린다
+            var soundLayer = sound.gameObject.AddComponent<Canvas>();
+            soundLayer.overrideSorting = true;
+            soundLayer.sortingOrder = 10;
+            sound.gameObject.AddComponent<GraphicRaycaster>();
+            var sr2 = Ui.Fill(Ui.Rect("Row", sound.transform));
+            sr2.offsetMin = new Vector2(20, 0);
+            sr2.offsetMax = new Vector2(-20, 0);
+            Ui.Layout<HorizontalLayoutGroup>(sr2, 14);
+            Ui.Size(Ui.PixelLabel("Label", sr2, "SOUND", 16, Ui.Muted), 64, 40);
+            Button toggle = null;
+            toggle = Styled(Ui.Button("Toggle", sr2, "", 22, () =>
+            {
+                Sound.Muted = !Sound.Muted;
+                RenderSoundToggle(toggle);
+            }), Ui.Blue);
+            Ui.Size(toggle, 80, 40);
+            RenderSoundToggle(toggle);
+            Ui.Size(Ui.Slider("Volume", sr2, Sound.Volume, Ui.Gold, v => Sound.Volume = v), 190, 16);
+        }
+
+        static void RenderSoundToggle(Button b)
+        {
+            b.GetComponentInChildren<Text>().text = Sound.Muted ? "OFF" : "ON";
+            b.image.color = Sound.Muted ? new Color(0.45f, 0.47f, 0.52f) : Ui.Blue;
         }
 
         void BuildRight(Transform parent)

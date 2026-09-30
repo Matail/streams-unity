@@ -13,6 +13,9 @@ namespace Streams.Presentation
         static readonly string[] Levels = { "입문", "보통", "숙련", "고수", "마스터" }; // 난이도 1~5
 
         IGameSession session;
+        EventLog events; // 행동 기록 (망설임·포기·재대전·세션) — 5초마다 모아 보낸다
+        float flushAt;
+        string gameId;
         readonly Board myBoard = new Board();
         readonly Board aiBoard = new Board();
         int card, turn, level;
@@ -40,11 +43,16 @@ namespace Streams.Presentation
 
         void Awake()
         {
-            session = new AiSession(new ApiClient(ClientInfo.BaseUrl));
+            var api = new ApiClient(ClientInfo.BaseUrl);
+            session = new AiSession(api);
+            events = new EventLog(api);
+            events.Add("session_start");
+            events.Flush();
             session.Started += info =>
             {
                 level = info.Level;
                 levelName = info.LevelName;
+                gameId = info.GameId;
             };
             session.CardDealt += (c, t) =>
             {
@@ -81,10 +89,31 @@ namespace Streams.Presentation
             Render();
         }
 
+        void Update()
+        {
+            if (Time.unscaledTime < flushAt) return;
+            flushAt = Time.unscaledTime + 5f;
+            events.Flush();
+        }
+
+        /// <summary>끝나지 않은 AI 대전을 두고 떠나면 기록한다 (튜토리얼은 빼고).</summary>
+        void RecordAbandon()
+        {
+            if (playing && !tutorial) events.Add("abandon", gameId, $"{{\"turn\":{turn},\"level\":{level}}}");
+        }
+
+        /// <summary>빈칸 위에 머물다 놓지 않고 떠남 = 망설임. 0.1초 미만은 스쳐 지나간 것으로 본다.</summary>
+        void RecordHover(int slot, int ms)
+        {
+            if (!playing || tutorial || ms < 100 || !myBoard.IsEmpty(slot)) return;
+            events.Add("hover", gameId, $"{{\"turn\":{turn},\"slot\":{slot},\"card\":{card},\"ms\":{ms}}}");
+        }
+
         async void StartGame(int lv)
         {
             if (busy) return;
             busy = true;
+            RecordAbandon();
             tutorial = false;
             tutView.Hide();
             Sound.Music(); // 브라우저는 첫 클릭 전엔 소리를 막으므로 여기서 시작
@@ -181,6 +210,7 @@ namespace Streams.Presentation
         void StartTutorial()
         {
             if (busy) return;
+            RecordAbandon();
             Sound.Music();
             tutorial = true;
             playing = true;
@@ -484,7 +514,7 @@ namespace Streams.Presentation
             hintText = Ui.Label("Hint", mc, "난이도를 골라 시작하세요", 22, Ui.Ink);
 
             myRow = Row(area, "MyRow", 0f, 110, "YOU", Ui.Blue);
-            myView = new BoardView("MyBoard", myRow, Place);
+            myView = new BoardView("MyBoard", myRow, Place, RecordHover);
         }
 
         // ── 작은 조립 도우미 ───────────────────────────────────────
@@ -560,7 +590,7 @@ namespace Streams.Presentation
             Ui.Fill(dim.rectTransform);
             startPanel = dim.gameObject;
             var box = Panel("Box", dim.transform);
-            box.rectTransform.sizeDelta = new Vector2(640, 680);
+            box.rectTransform.sizeDelta = new Vector2(640, 760);
             var col = Column(box.rectTransform, 14, 36);
             Ui.Label("Title", col, "The STREAMS +", 66, Ui.Gold);
             for (int i = 0; i < Levels.Length; i++)
@@ -571,6 +601,9 @@ namespace Streams.Presentation
                 Ui.Size(b, 0, 64);
             }
             Ui.Size(Styled(Ui.Button("Tutorial", col, "튜토리얼", 22, StartTutorial), Ui.Gold), 0, 64);
+            // 수집 안내 — 무엇을 왜 모으는지 (docs/streams-unity-plan.md 2단계)
+            var notice = Ui.Label("Notice", col, "AI 대전의 플레이 기록(카드 배치, 걸린 시간, 칸 위에서 머문 시간)은\nAI 연구를 위해 익명으로 저장됩니다.", 22, Ui.Muted);
+            notice.lineSpacing = 1.2f;
             startError = Ui.Label("Error", col, "", 22, Ui.Red);
             startError.gameObject.SetActive(false);
         }
@@ -586,7 +619,11 @@ namespace Streams.Presentation
             resultTitle = Ui.Label("Title", col, "", 66, Ui.Gold);
             resultScore = Ui.Label("Score", col, "", 33, Ui.Ink);
             resultScore.horizontalOverflow = HorizontalWrapMode.Wrap;
-            againButton = Styled(Ui.Button("Again", col, "한 판 더", 22, () => StartGame(level)), Ui.Blue);
+            againButton = Styled(Ui.Button("Again", col, "한 판 더", 22, () =>
+            {
+                events.Add("rematch", gameId, $"{{\"level\":{level}}}");
+                StartGame(level);
+            }), Ui.Blue);
             Ui.Size(againButton, 0, 64);
             Ui.Size(Styled(Ui.Button("Levels", col, "난이도 바꾸기", 22, () =>
             {

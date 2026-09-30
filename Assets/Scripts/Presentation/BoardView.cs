@@ -15,7 +15,8 @@ namespace Streams.Presentation
         readonly Button[] buttons;
         int highlighted = -1;
 
-        public BoardView(string name, Transform parent, Action<int> onClick)
+        /// <param name="onLeave">커서가 칸을 떠날 때 (칸, 머문 ms). 내 보드만 — 망설임 기록용.</param>
+        public BoardView(string name, Transform parent, Action<int> onClick, Action<int, int> onLeave = null)
         {
             var root = Ui.Rect(name, parent);
             Ui.Layout<HorizontalLayoutGroup>(root, Gap);
@@ -38,6 +39,27 @@ namespace Streams.Presentation
                     buttons[i].colors = colors;
                     buttons[i].onClick.AddListener(() => onClick(slot));
                 }
+                if (onLeave != null)
+                {
+                    var hover = slots[i].gameObject.AddComponent<SlotHover>();
+                    hover.Left = ms => onLeave(slot, ms);
+                }
+            }
+        }
+
+        /// <summary>커서가 칸 위에 머문 시간을 잰다. 터치 화면에선 hover 가 없어 부르지 않는다.</summary>
+        sealed class SlotHover : MonoBehaviour, UnityEngine.EventSystems.IPointerEnterHandler, UnityEngine.EventSystems.IPointerExitHandler
+        {
+            public Action<int> Left;
+            float enteredAt = -1;
+
+            public void OnPointerEnter(UnityEngine.EventSystems.PointerEventData e) => enteredAt = Time.unscaledTime;
+
+            public void OnPointerExit(UnityEngine.EventSystems.PointerEventData e)
+            {
+                if (enteredAt < 0) return;
+                Left?.Invoke(Mathf.RoundToInt((Time.unscaledTime - enteredAt) * 1000f));
+                enteredAt = -1;
             }
         }
 

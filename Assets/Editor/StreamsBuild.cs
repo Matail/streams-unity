@@ -32,6 +32,9 @@ public static class StreamsBuild
         UnityEditor.WebGL.UserBuildSettings.codeOptimization = UnityEditor.WebGL.WasmCodeOptimization.DiskSizeLTO;
         PlayerSettings.SetIl2CppCodeGeneration(NamedBuildTarget.WebGL, Il2CppCodeGeneration.OptimizeSize);
         PlayerSettings.runInBackground = true;
+        // 시작할 때 Unity 로고 스플래시를 띄우지 않는다 (Unity 6 부터 Personal 도 끌 수 있음)
+        PlayerSettings.SplashScreen.show = false;
+        PlayerSettings.SplashScreen.showUnityLogo = false;
         if (string.IsNullOrEmpty(PlayerSettings.bundleVersion) || PlayerSettings.bundleVersion == "1.0")
             PlayerSettings.bundleVersion = "0.1.0"; // x-streams-client 헤더 버전
         EnsureScene();

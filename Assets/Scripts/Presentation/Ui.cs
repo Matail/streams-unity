@@ -126,6 +126,36 @@ namespace Streams.Presentation
             return b;
         }
 
+        /// <summary>0~1 가로 막대 (트랙 · 채움 · 손잡이). 값이 바뀌면 onChange.</summary>
+        public static Slider Slider(string name, Transform parent, float value, Color fill, System.Action<float> onChange)
+        {
+            var track = Box(name, parent, Slot);
+            var s = track.gameObject.AddComponent<Slider>();
+
+            var fillArea = Fill(Rect("Fill Area", track.transform));
+            var f = Box("Fill", fillArea, fill);
+            f.rectTransform.anchorMin = Vector2.zero;
+            f.rectTransform.anchorMax = new Vector2(0, 1);
+            f.rectTransform.sizeDelta = Vector2.zero;
+
+            var handleArea = Fill(Rect("Handle Area", track.transform));
+            handleArea.offsetMin = new Vector2(6, -6); // 손잡이가 트랙 위아래로 조금 삐져나오게
+            handleArea.offsetMax = new Vector2(-6, 6);
+            var h = Box("Handle", handleArea, Ink);
+            h.rectTransform.anchorMin = Vector2.zero;
+            h.rectTransform.anchorMax = new Vector2(0, 1);
+            h.rectTransform.sizeDelta = new Vector2(12, 0);
+
+            s.fillRect = f.rectTransform;
+            s.handleRect = h.rectTransform;
+            s.targetGraphic = h;
+            s.minValue = 0;
+            s.maxValue = 1;
+            s.value = value;
+            s.onValueChanged.AddListener(v => onChange(v));
+            return s;
+        }
+
         public static void Size(Component c, float w, float h)
         {
             if (!c.TryGetComponent<LayoutElement>(out var le)) le = c.gameObject.AddComponent<LayoutElement>();

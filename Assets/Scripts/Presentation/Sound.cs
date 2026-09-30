@@ -12,9 +12,27 @@ namespace Streams.Presentation
         static AudioSource bgm, sfx;
         static AudioClip[] clips;
 
+        // 전체 볼륨과 음소거 — 배경음악·효과음 모두에 걸린다. 브라우저(기기)마다 기억한다.
+        const string VolumeKey = "streams.volume", MutedKey = "streams.muted";
+
+        public static float Volume
+        {
+            get => PlayerPrefs.GetFloat(VolumeKey, 0.8f);
+            set { PlayerPrefs.SetFloat(VolumeKey, Mathf.Clamp01(value)); PlayerPrefs.Save(); Apply(); }
+        }
+
+        public static bool Muted
+        {
+            get => PlayerPrefs.GetInt(MutedKey, 0) == 1;
+            set { PlayerPrefs.SetInt(MutedKey, value ? 1 : 0); PlayerPrefs.Save(); Apply(); }
+        }
+
+        static void Apply() => AudioListener.volume = Muted ? 0f : Volume;
+
         static void Init()
         {
             if (sfx != null) return;
+            Apply();
             var go = new GameObject("Sound");
             Object.DontDestroyOnLoad(go);
             sfx = go.AddComponent<AudioSource>();

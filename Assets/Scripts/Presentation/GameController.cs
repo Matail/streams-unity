@@ -1,5 +1,6 @@
-// STREAMS AI 대전 화면. 어떤 씬이든 로드되면 스스로 만들어진다 (GameBootstrap).
-// 흐름은 웹 버전(my-site public/games/streams/script.js)과 같다: 난이도 고르기 → 20턴 → 결과.
+// STREAMS 화면. 어떤 씬이든 로드되면 스스로 만들어진다 (GameBootstrap).
+// AI 대전 흐름은 웹 버전(my-site public/games/streams/script.js)과 같다: 난이도 고르기 → 20턴 → 결과.
+// 멀티 방(친구와 대전)은 GameController.Multi.cs — 같은 판 화면을 IGameSession 이벤트로 함께 쓴다.
 using System;
 using Streams.Core;
 using Streams.Net;
@@ -8,11 +9,12 @@ using UnityEngine.UI;
 
 namespace Streams.Presentation
 {
-    public sealed class GameController : MonoBehaviour
+    public sealed partial class GameController : MonoBehaviour
     {
         static readonly string[] Levels = { "입문", "보통", "숙련", "고수", "마스터" }; // 난이도 1~5
 
-        IGameSession session;
+        IGameSession session; // 지금 판의 세션: AI 대전(ai) 또는 멀티 방(room)
+        AiSession ai;
         EventLog events; // 행동 기록 (망설임·포기·재대전·세션) — 5초마다 모아 보낸다
         float flushAt;
         string gameId;
@@ -21,16 +23,20 @@ namespace Streams.Presentation
         readonly Board myBoard = new Board();
         readonly Board aiBoard = new Board();
         int card, turn, level;
+        int placedTurn = -1; // 내가 이번 카드를 놓은 턴 (멀티는 모두 놓을 때까지 기다린다)
+        int pendingSlot = -1; // 서버 확인을 기다리는 내 수의 칸
         string levelName = "-";
         bool busy, playing;
+        bool dirty; // 이벤트를 받아 화면을 다시 그려야 함 (멀티 메시지는 Update 에서 온다)
         float cardShownAt;
 
         // 이번 판에 나온 카드 수 (값별) — 오른쪽 "남은 카드" 창
         readonly int[] seen = new int[Rules.MaxCard + 1];
 
         BoardView myView, aiView;
-        Text turnText, myScoreText, aiScoreText, levelText, levelNameText, agentSubText, cardText, hintText,
-            deckText, runsText, resultTitle, resultScore, startError;
+        Text turnText, myScoreText, aiScoreText, aiScoreLabel, levelText, levelNameText, agentSubText, modeText, levelsLabel,
+            cardText, hintText, deckText, runsText, resultTitle, resultScore, startError;
+        RectTransform aiRow;
         Image cardImage;
         readonly Image[] trackCells = new Image[Rules.MaxCard + 1];
         readonly Text[] trackCounts = new Text[Rules.MaxCard + 1];
@@ -45,39 +51,84 @@ namespace Streams.Presentation
 
         void Awake()
         {
-            var api = new ApiClient(ClientInfo.BaseUrl);
-            session = new AiSession(api);
+            api = new ApiClient(ClientInfo.BaseUrl);
+            session = ai = new AiSession(api);
             events = new EventLog(api);
             events.Add("session_start");
             events.Flush();
-            session.Started += info =>
+            Bind(ai);
+            Build();
+            Render();
+            ResumeRoom(); // 저장된 방이 있으면 (새로고침 등) 같은 자리로 다시 붙는다
+        }
+
+        /// <summary>세션 이벤트를 화면에 잇는다. 지금 판의 세션이 아닌 것의 이벤트는 무시한다.</summary>
+        void Bind(IGameSession s)
+        {
+            s.Started += info =>
             {
+                if (s != session) return;
+                dirty = true;
                 level = info.Level;
                 levelName = info.LevelName;
                 gameId = info.GameId;
                 mySeat = info.MySeat;
                 players = info.Players;
+                if (IsRoom) OnRoomStarted();
             };
-            session.CardDealt += (c, t) =>
+            s.CardDealt += (c, t) =>
             {
+                if (s != session) return;
+                dirty = true;
                 card = c;
                 turn = t;
                 seen[c]++;
                 cardShownAt = Time.realtimeSinceStartup;
+                if (IsRoom) OnRoomCard();
             };
-            session.Placed += (seat, slot, c) =>
+            s.Placed += (seat, slot, c) =>
             {
-                if (seat == mySeat) return;
+                if (s != session) return;
+                dirty = true;
+                if (seat == mySeat)
+                {
+                    // 시간이 지나 AI 가 대신 둔 내 수 (멀티) — 내가 그려 둔 수는 오지 않는다.
+                    // 늦게 보낸 내 수를 미리 그려 뒀으면 서버 수로 바꾼다
+                    if (pendingSlot >= 0 && pendingSlot != slot) myBoard.Clear(pendingSlot);
+                    pendingSlot = -1;
+                    if (myBoard.IsEmpty(slot)) myBoard.Place(slot, c);
+                    placedTurn = turn;
+                    return;
+                }
+                if (IsRoom)
+                {
+                    OpponentPlaced(seat, slot, c);
+                    return;
+                }
                 aiBoard.Place(slot, c);
                 aiView.Highlight(slot);
                 Sound.Play(Sfx.Ai);
             };
-            session.ScoreChanged += (seat, score) => (seat == mySeat ? myScoreText : aiScoreText).text = score.ToString();
-            session.Finished += r =>
+            s.ScoreChanged += (seat, score) =>
             {
+                if (s != session) return;
+                dirty = true;
+                if (seat == mySeat) myScoreText.text = score.ToString();
+                else if (IsRoom) OpponentScore(seat, score);
+                else aiScoreText.text = score.ToString();
+            };
+            s.Finished += r =>
+            {
+                if (s != session) return;
+                dirty = true;
                 playing = false;
                 card = 0;
                 turn = Rules.Slots;
+                if (IsRoom)
+                {
+                    ShowRoomResult(r);
+                    return;
+                }
                 var me = r.Mine;
                 bool tied = false;
                 var lines = new string[r.Standings.Count];
@@ -90,31 +141,36 @@ namespace Streams.Presentation
                 resultTitle.text = me.Rank > 1 ? "패배" : tied ? "무승부" : "승리!";
                 resultScore.fontSize = 33;
                 againButton.gameObject.SetActive(true);
+                againButton.GetComponentInChildren<Text>().text = "한 판 더";
                 resultScore.text = string.Join(" · ", lines);
                 endPanel.SetActive(true);
                 Sound.Play(me.Rank == 1 ? Sfx.Win : Sfx.Lose);
             };
-            Build();
-            Render();
         }
 
         void Update()
         {
+            UpdateRoom();
+            if (dirty)
+            {
+                dirty = false;
+                Render();
+            }
             if (Time.unscaledTime < flushAt) return;
             flushAt = Time.unscaledTime + 5f;
             events.Flush();
         }
 
-        /// <summary>끝나지 않은 AI 대전을 두고 떠나면 기록한다 (튜토리얼은 빼고).</summary>
+        /// <summary>끝나지 않은 AI 대전을 두고 떠나면 기록한다 (튜토리얼 · 멀티는 빼고).</summary>
         void RecordAbandon()
         {
-            if (playing && !tutorial) events.Add("abandon", gameId, $"{{\"turn\":{turn},\"level\":{level}}}");
+            if (playing && !tutorial && !IsRoom) events.Add("abandon", gameId, $"{{\"turn\":{turn},\"level\":{level}}}");
         }
 
-        /// <summary>빈칸 위에 머물다 놓지 않고 떠남 = 망설임. 0.1초 미만은 스쳐 지나간 것으로 본다.</summary>
+        /// <summary>빈칸 위에 머물다 놓지 않고 떠남 = 망설임. 0.1초 미만은 스쳐 지나간 것으로 본다 (AI 대전만).</summary>
         void RecordHover(int slot, int ms)
         {
-            if (!playing || tutorial || ms < 100 || !myBoard.IsEmpty(slot)) return;
+            if (!playing || tutorial || IsRoom || ms < 100 || !myBoard.IsEmpty(slot)) return;
             events.Add("hover", gameId, $"{{\"turn\":{turn},\"slot\":{slot},\"card\":{card},\"ms\":{ms}}}");
         }
 
@@ -123,6 +179,8 @@ namespace Streams.Presentation
             if (busy) return;
             busy = true;
             RecordAbandon();
+            LeaveRoom();
+            session = ai;
             tutorial = false;
             tutView.Hide();
             Sound.Music(); // 브라우저는 첫 클릭 전엔 소리를 막으므로 여기서 시작
@@ -133,6 +191,7 @@ namespace Streams.Presentation
                 aiBoard.Reset();
                 Array.Clear(seen, 0, seen.Length);
                 aiView.Highlight(-1);
+                placedTurn = -1;
                 await session.StartAsync(new SessionOptions(lv));
                 playing = true;
                 startPanel.SetActive(false);
@@ -156,19 +215,35 @@ namespace Streams.Presentation
                 PlaceTutorial(slot);
                 return;
             }
-            if (busy || !playing || !myBoard.IsEmpty(slot)) return;
+            if (busy || !playing || placedTurn == turn || !myBoard.IsEmpty(slot)) return;
             busy = true;
             int placed = card;
             int thinkMs = Mathf.RoundToInt((Time.realtimeSinceStartup - cardShownAt) * 1000f);
             myBoard.Place(slot, placed); // 먼저 그린다 — 서버가 거절하면 되돌림
+            placedTurn = turn;
+            pendingSlot = slot;
             Sound.Play(Sfx.Place);
-            hintText.text = "AI가 생각하는 중…";
+            hintText.text = IsRoom ? "" : "AI가 생각하는 중…";
             Render();
             try
             {
                 await session.PlaceAsync(slot, thinkMs);
-                if (playing) hintText.text = "내 보드의 빈칸을 눌러 놓으세요";
+                pendingSlot = -1;
+                if (IsRoom) dirty = true; // 기다림 안내는 RenderRoom 이 쓴다
+                else if (playing) hintText.text = "내 보드의 빈칸을 눌러 놓으세요";
                 else hintText.text = "게임 끝";
+            }
+            catch (StreamsApiException e) when (IsRoom && e.Status == 400)
+            {
+                // 서버가 거절 (이미 시간이 지나 AI 가 뒀거나 찬 칸) — 되돌리고 서버 수를 기다린다
+                Debug.LogWarning(e.Message);
+                if (pendingSlot >= 0)
+                {
+                    myBoard.Clear(pendingSlot);
+                    pendingSlot = -1;
+                    placedTurn = -1;
+                }
+                hintText.text = "그 칸에는 놓지 못했어요";
             }
             catch (StreamsApiException e) when (e.Status == 404)
             {
@@ -181,6 +256,8 @@ namespace Streams.Presentation
             {
                 Debug.LogException(e);
                 myBoard.Clear(slot);
+                pendingSlot = -1;
+                placedTurn = -1;
                 hintText.text = "연결이 끊겼어요. 다시 눌러 주세요.";
             }
             busy = false;
@@ -189,7 +266,8 @@ namespace Streams.Presentation
 
         void Render()
         {
-            myView.Render(myBoard, playing && !busy);
+            myView.Render(myBoard, playing && !busy && placedTurn != turn && !MyAuto);
+            aiRow.gameObject.SetActive(!IsRoom);
             aiView.Render(aiBoard, false);
             bool showCard = card > 0 && playing;
             cardText.text = showCard ? card.ToString() : "";
@@ -199,6 +277,10 @@ namespace Streams.Presentation
             levelText.text = tutorial ? "TUTORIAL" : level > 0 ? $"LEVEL {level}" : "LEVEL -";
             levelNameText.text = levelName;
             agentSubText.text = $"AI · {levelName}";
+            modeText.text = "VS AI";
+            aiScoreLabel.text = "AI";
+            levelsLabel.text = "난이도 바꾸기";
+            RenderRoom(); // 멀티면 위 글자들을 방에 맞게 덮어쓴다
 
             int dealt = 0;
             for (int v = Rules.MinCard; v <= Rules.MaxCard; v++)
@@ -220,9 +302,12 @@ namespace Streams.Presentation
         {
             if (busy) return;
             RecordAbandon();
+            LeaveRoom();
+            session = ai;
             Sound.Music();
             tutorial = true;
             playing = true;
+            placedTurn = -1;
             myBoard.Reset();
             aiBoard.Reset();
             Array.Clear(seen, 0, seen.Length);
@@ -362,6 +447,7 @@ namespace Streams.Presentation
             BuildCenter(canvas.transform);
             BuildStartPanel(canvas.transform);
             BuildEndPanel(canvas.transform);
+            BuildRoomPanels(canvas.transform);
             tutView = new TutorialView(canvas.transform);
         }
 
@@ -382,8 +468,8 @@ namespace Streams.Presentation
             Ui.Size(score, 0, 150);
             var sr = Ui.Layout<HorizontalLayoutGroup>(score, 12);
             sr.childForceExpandWidth = sr.childForceExpandHeight = true;
-            myScoreText = ScoreBox(score, "YOU", Ui.Blue);
-            aiScoreText = ScoreBox(score, "AI", Ui.Red);
+            myScoreText = ScoreBox(score, "YOU", Ui.Blue, out _);
+            aiScoreText = ScoreBox(score, "AI", Ui.Red, out aiScoreLabel);
 
             // 캐릭터
             var chars = Ui.Rect("Characters", col);
@@ -398,15 +484,19 @@ namespace Streams.Presentation
             Ui.Size(mode, 0, 80);
             var mc = Column(mode.rectTransform, 0, 8);
             Ui.PixelLabel("Label", mc, "MODE", 16, Ui.Muted);
-            Ui.PixelLabel("Value", mc, "VS AI", 32, Ui.Ink);
+            modeText = Ui.PixelLabel("Value", mc, "VS AI", 32, Ui.Ink);
 
+            // 멀티 방에서는 "방 나가기"
             var levels = Styled(Ui.Button("Levels", col, "난이도 바꾸기", 22, () =>
             {
                 tutView.Hide();
                 endPanel.SetActive(false);
+                if (IsRoom) LeaveRoom();
                 startPanel.SetActive(true);
+                Render();
             }), Ui.Red);
             Ui.Size(levels, 0, 64);
+            levelsLabel = levels.GetComponentInChildren<Text>();
 
             // 소리: 켜고 끄기 + 전체 볼륨 (배경음악·효과음 모두)
             var sound = Ui.Picture("Sound", col, "panel", new Color(0.3f, 0.34f, 0.42f));
@@ -513,12 +603,12 @@ namespace Streams.Presentation
             area.offsetMin = new Vector2(488, 24);
             area.offsetMax = new Vector2(-408, -24);
 
-            var ai = Row(area, "AiRow", 1f, -110, "AGENT", Ui.Red);
-            aiView = new BoardView("AiBoard", ai, null);
+            aiRow = Row(area, "AiRow", 1f, -110, "AGENT", Ui.Red);
+            aiView = new BoardView("AiBoard", aiRow, null);
 
             var mid = Ui.Rect("Current", area);
             mid.anchorMin = mid.anchorMax = mid.pivot = new Vector2(0.5f, 0.5f);
-            mid.sizeDelta = new Vector2(600, 380);
+            mid.sizeDelta = new Vector2(600, 440);
             var mc = Column(mid, 14, 0);
             Ui.PixelLabel("Label", mc, "CARD", 32, Ui.Ink);
             cardImage = Ui.Picture("Card", mc, "card", Color.white);
@@ -527,6 +617,7 @@ namespace Streams.Presentation
             cardText = Ui.PixelLabel("Value", cardImage.transform, "", 96, Ui.CardInk);
             Ui.Fill(cardText.rectTransform);
             hintText = Ui.Label("Hint", mc, "난이도를 골라 시작하세요", 22, Ui.Ink);
+            BuildRoomCenter(area, mc);
 
             myRow = Row(area, "MyRow", 0f, 110, "YOU", Ui.Blue);
             myView = new BoardView("MyBoard", myRow, Place, RecordHover);
@@ -579,11 +670,11 @@ namespace Streams.Presentation
             return row;
         }
 
-        static Text ScoreBox(Transform parent, string label, Color color)
+        static Text ScoreBox(Transform parent, string label, Color color, out Text labelText)
         {
             var box = Ui.Picture(label, parent, "panel", color);
             var col = Column(box.rectTransform, 0, 12);
-            Ui.PixelLabel("Label", col, label, 32, Ui.Ink);
+            labelText = Ui.PixelLabel("Label", col, label, 32, Ui.Ink);
             return Ui.PixelLabel("Value", col, "0", 64, Ui.Ink);
         }
 
@@ -605,7 +696,7 @@ namespace Streams.Presentation
             Ui.Fill(dim.rectTransform);
             startPanel = dim.gameObject;
             var box = Panel("Box", dim.transform);
-            box.rectTransform.sizeDelta = new Vector2(640, 760);
+            box.rectTransform.sizeDelta = new Vector2(640, 840);
             var col = Column(box.rectTransform, 14, 36);
             Ui.Label("Title", col, "The STREAMS +", 66, Ui.Gold);
             for (int i = 0; i < Levels.Length; i++)
@@ -615,6 +706,7 @@ namespace Streams.Presentation
                     Color.Lerp(Ui.Blue, Ui.Red, i / 4f));
                 Ui.Size(b, 0, 64);
             }
+            Ui.Size(Styled(Ui.Button("Multi", col, "친구와 대전", 22, ShowMultiPanel), Ui.Accent), 0, 64);
             Ui.Size(Styled(Ui.Button("Tutorial", col, "튜토리얼", 22, StartTutorial), Ui.Gold), 0, 64);
             // 수집 안내 — 무엇을 왜 모으는지 (docs/streams-unity-plan.md 2단계)
             var notice = Ui.Label("Notice", col, "AI 대전의 플레이 기록(카드 배치, 걸린 시간, 칸 위에서 머문 시간)은\nAI 연구를 위해 익명으로 저장됩니다.", 22, Ui.Muted);
@@ -634,8 +726,14 @@ namespace Streams.Presentation
             resultTitle = Ui.Label("Title", col, "", 66, Ui.Gold);
             resultScore = Ui.Label("Score", col, "", 33, Ui.Ink);
             resultScore.horizontalOverflow = HorizontalWrapMode.Wrap;
+            // 멀티 방에서는 "대기실로" — 다음 판은 방장이 대기실에서 시작한다
             againButton = Styled(Ui.Button("Again", col, "한 판 더", 22, () =>
             {
+                if (IsRoom)
+                {
+                    ShowLobby();
+                    return;
+                }
                 events.Add("rematch", gameId, $"{{\"level\":{level}}}");
                 StartGame(level);
             }), Ui.Blue);
@@ -643,7 +741,9 @@ namespace Streams.Presentation
             Ui.Size(Styled(Ui.Button("Levels", col, "난이도 바꾸기", 22, () =>
             {
                 endPanel.SetActive(false);
+                if (IsRoom) LeaveRoom();
                 startPanel.SetActive(true);
+                Render();
             }), Ui.Red), 0, 64);
             endPanel.SetActive(false);
         }

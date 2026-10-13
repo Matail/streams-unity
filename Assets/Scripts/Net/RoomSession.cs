@@ -177,8 +177,23 @@ namespace Streams.Net
                     }
                     break;
                 case "finished":
+                    // 서버는 끝날 때 state 를 따로 보내지 않는다 — 들고 있는 상태를 끝난 판으로 맞춘다
                     var standings = new List<Standing>();
-                    foreach (var s in m.seats) standings.Add(new Standing(s.seat, s.score, s.rank));
+                    foreach (var s in m.seats)
+                    {
+                        standings.Add(new Standing(s.seat, s.score, s.rank));
+                        if (State == null) continue;
+                        foreach (var mine in State.seats)
+                            if (mine.seat == s.seat) { mine.score = s.score; mine.rank = s.rank; mine.placed = false; }
+                    }
+                    if (State != null)
+                    {
+                        State.phase = "finished";
+                        State.turn = -1;
+                        State.card = 0;
+                        State.mySlot = -1;
+                        StateChanged?.Invoke(State);
+                    }
                     Finished?.Invoke(new GameResult(standings, MySeat));
                     break;
                 case "error":
@@ -209,9 +224,12 @@ namespace Streams.Net
 
         void Deal(int card, int turn, int timeLeftMs)
         {
-            if (turn == dealtTurn) return;
-            dealtTurn = turn;
-            CardDealt?.Invoke(card, turn);
+            // 시작 때 state 는 마감을 정하기 전에 와서 남은 시간이 0 일 수 있다 — 같은 카드의 card 가 오면 시간만 고친다
+            if (turn != dealtTurn)
+            {
+                dealtTurn = turn;
+                CardDealt?.Invoke(card, turn);
+            }
             TimerStarted?.Invoke(timeLeftMs);
         }
 

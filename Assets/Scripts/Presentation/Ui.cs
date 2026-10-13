@@ -126,6 +126,22 @@ namespace Streams.Presentation
             return b;
         }
 
+        /// <summary>한 줄 입력칸 (밝은 바탕 · 가운데 정렬 · 흐린 안내 글자).</summary>
+        public static InputField Input(string name, Transform parent, string placeholder, int size, int maxChars)
+        {
+            var bg = Box(name, parent, new Color(1f, 1f, 1f, 0.92f));
+            var input = bg.gameObject.AddComponent<InputField>();
+            var text = Label("Text", bg.transform, "", size, CardInk);
+            text.supportRichText = false;
+            Fill(text.rectTransform);
+            var hint = Label("Placeholder", bg.transform, placeholder, size, Muted);
+            Fill(hint.rectTransform);
+            input.textComponent = text;
+            input.placeholder = hint;
+            input.characterLimit = maxChars;
+            return input;
+        }
+
         /// <summary>0~1 가로 막대 (트랙 · 채움 · 손잡이). 값이 바뀌면 onChange.</summary>
         public static Slider Slider(string name, Transform parent, float value, Color fill, System.Action<float> onChange)
         {

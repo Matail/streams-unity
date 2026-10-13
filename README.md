@@ -15,6 +15,8 @@ Assets/
 │   ├── Net/            서버 통신
 │   │   ├── IGameSession.cs   화면 ↔ 서버 이음새. AI 대전·멀티(5단계)가 같은 인터페이스
 │   │   ├── AiSession.cs      /api/streams/start, /move
+│   │   ├── RoomSession.cs    멀티 방: /rooms 만들기·들어가기 + 웹소켓 (매 프레임 Poll)
+│   │   ├── RoomSocket.cs     웹소켓 — WebGL 은 Plugins/WebGL/StreamsSocket.jslib, 에디터는 ClientWebSocket
 │   │   ├── ApiClient.cs      UnityWebRequest + Awaitable, 재시도, x-streams-client 헤더
 │   │   ├── ApiModels.cs      요청·응답 모양
 │   │   └── ClientInfo.cs     클라이언트 종류/버전, 서버 주소, 익명 플레이어 id
@@ -56,6 +58,8 @@ Streams.Net.ClientInfo.BaseUrl = "https://<사이트 도메인>";
 ## 테스트
 
 - Unity: Window → General → Test Runner → EditMode → Run All
+- 멀티 방 (서버 필요, 평소엔 건너뜀): matail.party 리포에서 `npx wrangler dev` → Test Runner 에서
+  `RoomSessionServerTests` 를 골라 Run Selected. 다른 서버는 환경 변수 `STREAMS_TEST_SERVER`
 - Unity 없이: `dotnet run -c Release --project Tools/CoreCheck` (GitHub Actions `core` 가 푸시마다 돌림)
 
 규칙을 바꾸면 my-site 에서 `node worker/streams/vectors.ts` 로 정답지를 다시 뽑아

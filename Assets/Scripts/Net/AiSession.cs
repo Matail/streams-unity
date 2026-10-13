@@ -7,10 +7,12 @@ namespace Streams.Net
 {
     public sealed class AiSession : IGameSession
     {
+        public const int MySeat = 0, AiSeat = 1;
+
         public event Action<SessionInfo> Started;
         public event Action<int, int> CardDealt;
-        public event Action<string, int, int> Placed;
-        public event Action<int, int> ScoresChanged;
+        public event Action<int, int, int> Placed;
+        public event Action<int, int> ScoreChanged;
         public event Action<GameResult> Finished;
 
         readonly ApiClient api;
@@ -32,8 +34,10 @@ namespace Streams.Net
             card = res.card;
             turn = res.turn;
             myBoard.Reset();
-            Started?.Invoke(new SessionInfo(res.gameId, res.level, res.levelName));
-            ScoresChanged?.Invoke(0, 0);
+            var players = new[] { new PlayerInfo(MySeat, "나", false), new PlayerInfo(AiSeat, $"AI({res.levelName})", true) };
+            Started?.Invoke(new SessionInfo(res.gameId, res.level, res.levelName, MySeat, players));
+            ScoreChanged?.Invoke(MySeat, 0);
+            ScoreChanged?.Invoke(AiSeat, 0);
             CardDealt?.Invoke(card, turn);
         }
 
@@ -52,11 +56,12 @@ namespace Streams.Net
                 token = res.token;
                 turn = res.turn;
                 myBoard.Place(slot, placed);
-                Placed?.Invoke(Seats.Ai, res.aiSlot, placed);
-                ScoresChanged?.Invoke(res.playerScore, res.aiScore);
+                Placed?.Invoke(AiSeat, res.aiSlot, placed);
+                ScoreChanged?.Invoke(MySeat, res.playerScore);
+                ScoreChanged?.Invoke(AiSeat, res.aiScore);
                 if (res.finished)
                 {
-                    Finished?.Invoke(new GameResult(res.playerScore, res.aiScore));
+                    Finished?.Invoke(GameResult.FromScores(new[] { (MySeat, res.playerScore), (AiSeat, res.aiScore) }, MySeat));
                 }
                 else
                 {

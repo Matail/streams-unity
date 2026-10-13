@@ -16,6 +16,8 @@ namespace Streams.Presentation
         EventLog events; // 행동 기록 (망설임·포기·재대전·세션) — 5초마다 모아 보낸다
         float flushAt;
         string gameId;
+        int mySeat;
+        System.Collections.Generic.IReadOnlyList<PlayerInfo> players = Array.Empty<PlayerInfo>();
         readonly Board myBoard = new Board();
         readonly Board aiBoard = new Board();
         int card, turn, level;
@@ -53,6 +55,8 @@ namespace Streams.Presentation
                 level = info.Level;
                 levelName = info.LevelName;
                 gameId = info.GameId;
+                mySeat = info.MySeat;
+                players = info.Players;
             };
             session.CardDealt += (c, t) =>
             {
@@ -63,27 +67,32 @@ namespace Streams.Presentation
             };
             session.Placed += (seat, slot, c) =>
             {
-                if (seat != Seats.Ai) return;
+                if (seat == mySeat) return;
                 aiBoard.Place(slot, c);
                 aiView.Highlight(slot);
                 Sound.Play(Sfx.Ai);
             };
-            session.ScoresChanged += (me, ai) =>
-            {
-                myScoreText.text = me.ToString();
-                aiScoreText.text = ai.ToString();
-            };
+            session.ScoreChanged += (seat, score) => (seat == mySeat ? myScoreText : aiScoreText).text = score.ToString();
             session.Finished += r =>
             {
                 playing = false;
                 card = 0;
                 turn = Rules.Slots;
-                resultTitle.text = r.MyScore > r.AiScore ? "승리!" : r.MyScore < r.AiScore ? "패배" : "무승부";
+                var me = r.Mine;
+                bool tied = false;
+                var lines = new string[r.Standings.Count];
+                for (int i = 0; i < r.Standings.Count; i++)
+                {
+                    var s = r.Standings[i];
+                    if (s.Seat != me.Seat && s.Rank == me.Rank) tied = true;
+                    lines[i] = $"{NameOf(s.Seat)} {s.Score}점";
+                }
+                resultTitle.text = me.Rank > 1 ? "패배" : tied ? "무승부" : "승리!";
                 resultScore.fontSize = 33;
                 againButton.gameObject.SetActive(true);
-                resultScore.text = $"나 {r.MyScore}점 · AI({levelName}) {r.AiScore}점";
+                resultScore.text = string.Join(" · ", lines);
                 endPanel.SetActive(true);
-                Sound.Play(r.MyScore >= r.AiScore ? Sfx.Win : Sfx.Lose);
+                Sound.Play(me.Rank == 1 ? Sfx.Win : Sfx.Lose);
             };
             Build();
             Render();
@@ -322,6 +331,12 @@ namespace Streams.Presentation
             resultScore.text = $"{string.Join(" + ", parts)}\n= 합계 {myBoard.Score}점";
             endPanel.SetActive(true);
             Sound.Play(Sfx.Win);
+        }
+
+        string NameOf(int seat)
+        {
+            foreach (var p in players) if (p.Seat == seat) return p.Name;
+            return $"#{seat}";
         }
 
         static int PoolCount(int v)

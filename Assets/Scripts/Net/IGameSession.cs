@@ -102,7 +102,8 @@ namespace Streams.Net
         /// <summary>이번에 놓을 카드. turn = 지금까지 놓은 카드 수 (0~19).</summary>
         event Action<int, int> CardDealt; // (card, turn)
 
-        /// <summary>다른 자리(AI·상대)가 카드를 놓음. 내 수는 UI 가 먼저 그리므로 오지 않는다.</summary>
+        /// <summary>다른 자리(AI·상대)가 카드를 놓음. 내 수는 UI 가 먼저 그리므로 오지 않는다
+        /// — 단 멀티에서 시간이 지나 AI 가 대신 둔 내 수는 온다.</summary>
         event Action<int, int, int> Placed; // (seat, slot, card)
 
         /// <summary>서버가 계산한 자리 하나의 점수. 화면에는 항상 이 값을 쓴다.</summary>

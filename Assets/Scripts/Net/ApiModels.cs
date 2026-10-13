@@ -42,6 +42,23 @@ namespace Streams.Net
         public bool finished;
     }
 
+    // 멀티 방 (docs/streams-api.md "멀티 (방)"): POST /rooms, /rooms/{code}/join
+
+    [Serializable]
+    public class RoomRequest
+    {
+        public string name;     // 닉네임 1~12자
+        public string playerId;
+    }
+
+    [Serializable]
+    public class RoomTicket
+    {
+        public string code;      // 방 코드 6자
+        public int seat;         // 내 자리 0~7
+        public string seatToken; // 웹소켓 hello 에 쓰는 비밀값
+    }
+
     [Serializable]
     public class ErrorResponse
     {
